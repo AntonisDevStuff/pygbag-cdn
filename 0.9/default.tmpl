@@ -1,4 +1,4 @@
-<html lang="en-us"><script src="{{cookiecutter.cdn}}pythons.js" type=module id=site data-LINES={{cookiecutter.LINES}} data-CONSOLE={{cookiecutter.CONSOLE}} data-python=python{{cookiecutter.PYBUILD}} data-os=vtx,fs,snd,gui async defer>#<!--
+<html lang="en"><script src="{{cookiecutter.cdn}}pythons.js" type=module id=site data-LINES={{cookiecutter.LINES}} data-CONSOLE={{cookiecutter.CONSOLE}} data-python=python{{cookiecutter.PYBUILD}} data-os=vtx,fs,snd,gui async defer>#<!--
 
 print("""
 Loading {{cookiecutter.title}} from {{cookiecutter.archive}}.apk
@@ -50,137 +50,226 @@ def uy(*argv):
 
 # do not rename
 async def custom_site():
-
-    import sys
-    import asyncio
-    import platform
-    import json
+    import asyncio, json, math
     from pathlib import Path
+    import pygame, embed
 
+    try:
+        platform.document.body.style.background = (
+            "radial-gradient(ellipse at 10% 10%, rgba(76,175,80,0.14) 0%, transparent 20%),"
+            "radial-gradient(ellipse at 90% 90%, rgba(44,62,80,0.22) 0%, transparent 30%),"
+            "linear-gradient(180deg, #276221 0%, #1b1d1f 85%)"
+        )
+    except Exception:
+        pass
 
-
-    import embed
-
-
-    platform.document.body.style.background = "#7f7f7f"
-
-    import pygame
+    page_title = "Pygame Web"
 
     def compose():
         pygame.display.update()
-        window.chromakey(None, *screen.get_colorkey(), 40)
+        try:
+            window.chromakey(None, *screen.get_colorkey(), 40)
+        except Exception:
+            pass
 
     pygame.init()
     pygame.font.init()
 
-    screen = pygame.display.set_mode([ux(.100),uy(.100)], pygame.SRCALPHA, 32)
-    screen.set_colorkey( (0,0,0,0), pygame.RLEACCEL )
-    screen.fill( (0,0,0,0) )
-
+    # Small overlay surface used for UI (drawn over the canvas region)
+    screen = pygame.display.set_mode([ux(.100), uy(.100)], pygame.SRCALPHA, 32)
+    screen.set_colorkey((0, 0, 0, 0), pygame.RLEACCEL)
+    screen.fill((0, 0, 0, 0))
     compose()
 
-    platform.window.transfer.hidden = true
-    platform.window.canvas.style.visibility = "visible"
+    pygame.display.set_caption(page_title)
 
-
+    platform.window.transfer.hidden = True
+    try:
+        platform.window.canvas.style.visibility = "visible"
+    except Exception:
+        pass
 
     apk = "{{cookiecutter.archive}}.apk"
-
     bundle = "{{cookiecutter.archive}}"
-
-    # the C or js loader could do that but be explicit.
-    appdir = Path(f"/data/data/{bundle}") # /data/data/{{cookiecutter.archive}}
-    appdir.mkdir()
-
-
-    # mount apk
+    appdir = Path(f"/data/data/{bundle}")
+    appdir.mkdir(exist_ok=True)
 
     cfg = {
         "io": "url",
-        "type":"mount",
-        "mount" : {
-            "point" : appdir.as_posix(),
-            "path" : "/",
-        },
-        "path" : f"/ => {appdir.as_posix()}",
+        "type": "mount",
+        "mount": {"point": appdir.as_posix(), "path": "/"},
+        "path": f"/ => {appdir.as_posix()}",
     }
-
-
     track = platform.window.MM.prepare(apk, json.dumps(cfg))
 
-    marginx = ux(.020) # 20%
-    marginy = uy(.045) # 45%
+    marginx = ux(.020)
+    marginy = uy(.045)
 
+    title_font = pygame.sysfont.SysFont("freesans", uy(72))
+    hint_font = pygame.sysfont.SysFont("freesans", uy(36))
+    small_font = pygame.sysfont.SysFont("freesans", uy(24))
 
-    def pg_bar(pos):
-        nonlocal marginx, marginy
-        # resolution of progress bar, recalculate since it may not be know yet.
-        total = track.len or 10  # avoid div0
-        slot = ux(.060)/ total # 60%
+    HINT_FREQ_HZ = 0.9
+    HINT_AMPLITUDE = uy(7)
+    GLOW_FREQ_HZ = 1.2
+    SMOOTHING = 10.0
 
-        pygame.draw.rect(screen,(10,10,10),( marginx-ux(10), marginy-uy(10), (total*slot)+ux(20), uy(110) ) )
-        pygame.draw.rect(screen,(0,255,0), ( marginx, marginy, track.pos*slot, uy(90)) )
+    def draw_rounded_rect(surf, rect, color, radius=12):
+        pygame.draw.rect(surf, color, rect, border_radius=radius)
 
-    # wait until zip mount + overlayfs is complete
+    def pg_bar(pos, total=None, glow_alpha=60, t=0.0):
+        total = total or (track.len or 10)
+        slot = ux(.060) / total
+        box_w = (total * slot) + ux(20)
+        box_h = uy(110)
+
+        outer_rect = pygame.Rect(marginx - ux(12), marginy - uy(12), int(box_w) + ux(24), box_h + uy(24))
+        draw_rounded_rect(screen, outer_rect, (8, 8, 8, 240), radius=18)
+
+        glow_col = (66, 165, 245, max(10, glow_alpha))  # blue
+        glow_rect = pygame.Rect(marginx - ux(8), marginy - uy(8), int(box_w) + ux(16), box_h + uy(16))
+        for i, a in enumerate((8, 12, glow_col[3])):
+            c = (glow_col[0], glow_col[1], glow_col[2], a)
+            draw_rounded_rect(screen, glow_rect.inflate(i * ux(.002), i * uy(.002)), c, radius=14 + i)
+
+        bg_rect = pygame.Rect(marginx - ux(10), marginy - uy(10), int(box_w) + ux(20), box_h + uy(20))
+        draw_rounded_rect(screen, bg_rect, (6, 6, 6, 240), radius=16)
+
+        inner_rect = pygame.Rect(marginx, marginy, int(box_w), box_h)
+        draw_rounded_rect(screen, inner_rect, (14, 14, 14, 235), radius=12)
+
+        fill_w = int(min(pos, total) * slot)
+        if fill_w > 0:
+            fill_rect = pygame.Rect(marginx, marginy, fill_w, box_h)
+            draw_rounded_rect(screen, fill_rect, (66, 165, 245, 255), radius=10)  # blue
+
+        if fill_w >= int(box_w) - 2:
+            cap_width = max(ux(.004), int(box_w * 0.06))
+            cap_rect = pygame.Rect(marginx + int(box_w) - cap_width, marginy, cap_width, box_h)
+            draw_rounded_rect(screen, cap_rect, (0, 0, 0, 140), radius=6)
+
+        return bg_rect, inner_rect
+
+    def blit_center(surf, surf_to_blit, center_x, center_y):
+        r = surf_to_blit.get_rect()
+        r.center = (int(center_x), int(center_y))
+        surf.blit(surf_to_blit, r)
+
+    time_start_ms = pygame.time.get_ticks()
+    last_time_ms = time_start_ms
+    prev_hint_offset = 0.0
+    overlay_alpha = 0
+
     while not track.ready:
-        pg_bar(track.pos)
-        compose()
-        await asyncio.sleep(.1)
+        now_ms = pygame.time.get_ticks()
+        dt = max(1, now_ms - last_time_ms) / 1000.0
+        last_time_ms = now_ms
+        t = (now_ms - time_start_ms) / 1000.0
 
-    # fill it up in case it was cached and instant download
-    pg_bar(track.len)
+        glow_alpha = int(14 + 28 * (0.5 + 0.5 * math.sin(2.0 * math.pi * GLOW_FREQ_HZ * t)))
+        target = math.sin(2.0 * math.pi * HINT_FREQ_HZ * t) * HINT_AMPLITUDE
+        alpha = 1.0 - math.exp(-SMOOTHING * dt)
+        prev_hint_offset += alpha * (target - prev_hint_offset)
+
+        screen.fill((0, 0, 0, 0))
+        pg_bar(track.pos, glow_alpha=glow_alpha, t=t)
+
+        hint_base_y = marginy + uy(140)
+        hint_surf_temp = hint_font.render("Press / Click to start", True, (255, 230, 64))
+        blit_center(screen, hint_surf_temp, marginx + (ux(.060) / 2) + ux(6), hint_base_y + prev_hint_offset)
+
+        overlay_alpha = min(255, overlay_alpha + 18)
+        dim_surf = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        dim_surf.fill((0, 0, 0, int(overlay_alpha * 0.10)))
+        screen.blit(dim_surf, (0, 0))
+
+        compose()
+        await asyncio.sleep(0.045)
+
+    screen.fill((0, 0, 0, 0))
+    bg_rect, inner_rect = pg_bar(track.len or 10, glow_alpha=40)
     compose()
 
+    platform.run_main(PyConfig, loaderhome=appdir / "assets", loadermain=None)
 
-    # preloader will change dir and prepend it to sys.path
-    platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
-
-
-    # wait preloading complete
-    # that includes images and wasm compilation of bundled modules
-    while embed.counter()<0:
-        await asyncio.sleep(.1)
+    while embed.counter() < 0:
+        await asyncio.sleep(0.03)
 
     main = appdir / "assets" / "main.py"
-
-    # start async top level machinery and add a console.
     await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
-
-    # now that apk is mounted we have access to font cache
-    # but we need to fill __file__ that is not yet set
     __import__(__name__).__file__ = str(main)
 
-
-    # now make a prompt
-    fnt = pygame.sysfont.SysFont("freesans",  uy(80) )
-
     def ui_callback(pkg, error=None):
-        nonlocal fnt
+        screen.fill((0, 0, 0, 0))
+        t = (pygame.time.get_ticks() - time_start_ms) / 1000.0
+        glow_alpha = int(14 + 28 * (0.5 + 0.5 * math.sin(2.0 * math.pi * GLOW_FREQ_HZ * t)))
+        pg_bar(track.len or 10, glow_alpha=glow_alpha, t=t)
         if error:
-            prompt = fnt.render(f"{error}", True, "black")
+            txt = title_font.render(f"{error}", True, (230, 230, 230))
+            screen.blit(txt, (marginx + ux(40), marginy - uy(12)))
         else:
-            prompt = fnt.render(f"Setting [{pkg}] up", True, "black")
-        pg_bar(track.len)
-        screen.blit(prompt, ( marginx+ ux(80), marginy - uy(10) ) )
+            txt = small_font.render(f"Setting [{pkg}] up", True, (230, 230, 230))
+            screen.blit(txt, (marginx + ux(40), marginy - uy(12)))
         compose()
 
-    # test/wait if user media interaction required
     if not platform.window.MM.UME:
+        total = track.len or 10
+        slot = ux(.060) / total
+        box_w = (total * slot) + ux(20)
+        box_h = uy(110)
+        center_x = marginx + (box_w / 2)
+        center_y = marginy + (box_h / 2)
 
-        # now make a prompt
-        fnt = pygame.sysfont.SysFont("freesans",  uy(80) )
-        prompt = fnt.render("Ready to start !", True, "blue")
-        pg_bar(track.len)
-        screen.blit(prompt, ( marginx+ ux(80), marginy - uy(10) ) )
-        compose()
-        print("""
-        * Waiting for media user engagement : please click/touch page *
-    """)
+        title_surf = title_font.render("Game ready", True, (255, 248, 244))
+        hint_surf = hint_font.render("Press / Click to start", True, (255, 230, 64))
+        tiny_surf = small_font.render("Click or tap anywhere on the page", True, (186,142,35))
+
+        hint_base_y = marginy + box_h + uy(110)
+
+        for frame in range(14):
+            now_ms = pygame.time.get_ticks()
+            dt = max(1, now_ms - last_time_ms) / 1000.0
+            last_time_ms = now_ms
+            t = (now_ms - time_start_ms) / 1000.0
+
+            target = math.sin(2.0 * math.pi * HINT_FREQ_HZ * t) * HINT_AMPLITUDE
+            alpha = 1.0 - math.exp(-SMOOTHING * dt)
+            prev_hint_offset += alpha * (target - prev_hint_offset)
+
+            glow_alpha = int(10 + 30 * (0.5 + 0.5 * math.sin(2.0 * math.pi * GLOW_FREQ_HZ * t)))
+            screen.fill((0, 0, 0, 0))
+            pg_bar(track.len or 10, glow_alpha=glow_alpha, t=t)
+
+            blit_center(screen, title_surf, center_x, center_y + uy(6))
+            blit_center(screen, hint_surf, center_x, hint_base_y + prev_hint_offset)
+            blit_center(screen, tiny_surf, center_x, hint_base_y + prev_hint_offset + uy(40))
+
+            compose()
+            await asyncio.sleep(0.03)
+
+        print("\n* Waiting for media user engagement : please click/touch page *\n")
         while not platform.window.MM.UME:
-            await asyncio.sleep(.1)
+            now_ms = pygame.time.get_ticks()
+            dt = max(1, now_ms - last_time_ms) / 1000.0
+            last_time_ms = now_ms
+            t = (now_ms - time_start_ms) / 1000.0
 
-    # cleanup
-    screen.fill( (0,0,0,0) )
+            target = math.sin(2.0 * math.pi * HINT_FREQ_HZ * t) * HINT_AMPLITUDE
+            alpha = 1.0 - math.exp(-SMOOTHING * dt)
+            prev_hint_offset += alpha * (target - prev_hint_offset)
+
+            glow_alpha = int(12 + 24 * (0.5 + 0.5 * math.sin(2.0 * math.pi * GLOW_FREQ_HZ * t)))
+            screen.fill((0, 0, 0, 0))
+            pg_bar(track.len or 10, glow_alpha=glow_alpha, t=t)
+
+            blit_center(screen, title_surf, center_x, center_y + uy(6))
+            blit_center(screen, hint_surf, center_x, hint_base_y + prev_hint_offset)
+            blit_center(screen, tiny_surf, center_x, hint_base_y + prev_hint_offset + uy(40))
+
+            compose()
+            await asyncio.sleep(0.05)
+
+    screen.fill((0, 0, 0, 0))
     pygame.display.flip()
 
     await shell.runpy(main, callback=ui_callback)
@@ -190,16 +279,6 @@ async def custom_site():
 import asyncio
 
 asyncio.run( custom_site() )
-
-
-
-
-
-
-
-
-
-
 
 
 # BEGIN BLOCK
@@ -230,8 +309,6 @@ asyncio.run( custom_site() )
 
 
 
-// this dict is available under PyConfig.config from __main__
-
 config = {
     xtermjs : "{{cookiecutter.xtermjs}}" ,
     _sdl2 : "canvas",
@@ -248,7 +325,7 @@ config = {
 
 </script>
 
-    <title>{{cookiecutter.title}}</title>
+    <title>Pygame Web</title>
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -264,82 +341,210 @@ config = {
 
     <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
 
-    <style>
-        #status {
-            display: inline-block;
-            vertical-align: top;
-            margin-top: 20px;
-            margin-left: 30px;
-            font-weight: bold;
-            color: rgb(120, 120, 120);
-        }
 
-        #progress {
-            height: 20px;
-            width: 300px;
-        }
+<style>
+    :root {
+      --pgce-green: #4CAF50;
+      --pgce-green-light: #69f07c;
+      --pgce-green-focus: #b5ffcb;
+      --pgce-glow: 0 0 24px 10px #4CAF5077, 0 0 4px 1px #69f07c99;
+      --pgce-glow-focus: 0 0 48px 14px #69f07cf2, 0 0 12px 2px #b5ffcb;
+      --pgce-ink: #e4f8db;
+      --pgce-radius: 18px;
+      --pgce-shadow: 0 8px 32px 0 rgba(76,175,80,0.12),
+                     0 2px 12px 0 rgba(27,29,31,0.13);
+      --pgce-z: 9999;
+      --pgce-bg: radial-gradient(ellipse at 10% 10%, rgba(76,175,80,0.12) 0%, transparent 20%),
+                 radial-gradient(ellipse at 90% 90%, rgba(44,62,80,0.18) 0%, transparent 30%),
+                 linear-gradient(180deg, #276221 0%, #1b1d1f 85%);
+    }
 
-        div.emscripten { text-align: center; }
-        div.emscripten_border { border: 1px solid black; }
-        div.thick_border { border: 4px solid black; }
+    body {
+        font-family: "Segoe UI", "Arial", "sans-serif";
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--pgce-ink);
+        background: var(--pgce-bg);
+        background-attachment: fixed;
+        transition: background 0.3s;
+        overflow: hidden;
+    }
 
-        /* the canvas *must not* have any border or padding, or mouse coords will be wrong */
-        /* average size of droid screen 470dp x 320dp  */
+    #status {
+        display: inline-block;
+        margin-top: 20px;
+        margin-left: 30px;
+        font-weight: bold;
+        color: var(--pgce-green-light);
+        text-shadow: 0 2px 8px #1b1d1fab;
+        font-size: 1.3em;
+        letter-spacing: 0.04em;
+    }
+
+    #progress {
+        height: 20px;
+        width: 300px;
+        border-radius: var(--pgce-radius);
+        background: #232e23;
+        accent-color: var(--pgce-green);
+        box-shadow: var(--pgce-shadow), var(--pgce-glow);
+    }
+    #progress::-webkit-progress-value {
+        background-color: var(--pgce-green);
+    }
+    #progress::-moz-progress-bar {
+        background-color: var(--pgce-green);
+    }
+
+    #transfer {
+        position: fixed !important;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        z-index: var(--pgce-z) !important;
+        pointer-events: none;
+        background: none !important;
+        box-shadow: none !important;
+    }
+
+    .emscripten,
+    .emscripten_border,
+    .thick_border {
+        text-align: center;
+    }
+
+    .emscripten_border {
+        border: 2.5px solid var(--pgce-green);
+        border-radius: var(--pgce-radius);
+        box-shadow: var(--pgce-shadow), var(--pgce-glow);
+        padding: 1rem;
+        background: rgba(24,34,24,0.28);
+    }
+    .emscripten_border:focus-visible,
+    .emscripten_border:hover {
+        border-color: var(--pgce-green-light);
+        box-shadow: var(--pgce-shadow), var(--pgce-glow-focus);
+        transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    .thick_border {
+        border: 4px solid var(--pgce-green);
+        border-radius: calc(var(--pgce-radius)*2);
+        background: rgba(22,44,22,0.18);
+    }
+
+    canvas.emscripten {
+        border: 2.5px solid var(--pgce-green);
+        border-radius: var(--pgce-radius);
+        padding: 1rem;
+        background: rgba(24,32,24,0.22);
+        box-shadow: var(--pgce-shadow), var(--pgce-glow);
+        width: 80vw !important;
+        max-width: 1100px !important;
+        min-width: 300px !important;
+        height: 70vh !important;
+        max-height: 700px !important;
+        min-height: 200px !important;
+        z-index: 10;
+        margin: auto !important;
+        display: block;
+        position: relative !important;
+        transition: box-shadow 0.2s, border-color 0.2s;
+    }
+    canvas.emscripten:focus-visible,
+    canvas.emscripten {
+        border-color: var(--pgce-green-light);
+        box-shadow: var(--pgce-shadow), var(--pgce-glow-focus);
+        outline: none;
+    }
+
+    @media (max-width: 900px) {
         canvas.emscripten {
-            border: 0px none;
-            background-color: transparent;
-            width: 100%;
-            height: 100%;
-            z-index: 5;
-
-            padding: 0;
-            margin: 0 auto;
-
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            right: 0;
+            width: 99vw;
+            min-width: unset;
+            height: 36vh;
+            min-height: 120px;
+            max-height: 420px;
         }
-
-        body {
-            font-family: arial;
-            margin: 0;
-            padding: none;
-            background-color:powderblue;
+        #progress { width: 90vw; }
+    }
+    @media (max-width: 650px) {
+        canvas.emscripten {
+            width: 99vw;
+            min-width: unset;
+            height: 24vh;
+            min-height: 90px;
+            max-height: 240px;
         }
+        #progress { width: 95vw; }
+    }
 
-        .topright{
-           position:absolute;
-           top:0px;
-           right:0px;
-        }
+    .topright {
+       position:absolute;
+       top:0px;
+       right:0px;
+    }
+    .bottomright {
+        position:absolute;
+        top: 40%;
+        right: 0px;
+    }
+    .center {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .trinfo {
+       position:relative;
+       right:0px;
+       border: 1px solid var(--pgce-green);
+       border-radius: calc(var(--pgce-radius)/2);
+       padding: .2em .6em;
+       background:rgba(36,98,56,0.10);
+    }
+    .framed {
+       position:relative;
+       top:150px;
+       right:10px;
+       border: 1px solid var(--pgce-green);
+       border-radius: var(--pgce-radius);
+       background: #222322cc;
+       box-shadow: var(--pgce-shadow), var(--pgce-glow);
+    }
 
-        .bottomright {
-            position:absolute;
-            top: 40%;
-            right: 0px;
-        }
-
-        .center {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .trinfo{
-           position:relative;
-           right:0px;
-           border: 1px solid black;
-        }
-
-        .framed{
-           position:relative;
-           top:150px;
-           right:10px;
-           border: 1px solid black;
-        }
-    </style>
+    /* For mobile and touch devices */
+    @media (max-width: 700px) {
+        #progress { width: 80vw; }
+        .framed[width],
+        .framed,
+        iframe.framed { width: 100vw !important; }
+        .bottomright { top: 70%; }
+    }
+    input, button, label {
+      border-radius: var(--pgce-radius);
+      border: 1px solid var(--pgce-green);
+      background: rgba(28,44,18,0.18);
+      color: var(--pgce-ink);
+      font-size: inherit;
+      outline: none;
+      margin: .16em .24em;
+      padding: .22em 1.25em;
+      transition: border 0.12s, box-shadow 0.18s;
+    }
+    input:focus, button:focus {
+      border: 1.5px solid var(--pgce-green-light);
+      box-shadow: 0 0 0 2px #69f07c77;
+    }
+    button[disabled] {
+      opacity: 0.6;
+      filter: grayscale(0.2);
+      cursor: not-allowed;
+    }
+}
+</style>
 
     <script src="{{cookiecutter.cdn}}/browserfs.min.js"></script>
 
@@ -348,7 +553,7 @@ config = {
 <body>
 
     <div id="transfer" align=center>
-<!--        <div class="spinner" id='spinner'></div> -->
+     <div class="spinner" id='spinner'></div>
         <div class="emscripten" id="status">Downloading...</div>
         <div class="emscripten">
             <progress value="0" max="100" id="progress"></progress>
@@ -357,8 +562,8 @@ config = {
 
 
     <canvas class="emscripten" id="canvas"
-width="1px"
-height="1px"
+        width="1px"
+        height="1px"
     oncontextmenu="event.preventDefault()" tabindex=1>
     </canvas>
 
@@ -387,24 +592,7 @@ height="1px"
         </div>
 
         <div id=box class="emscripten_border" hidden=true>
-
             <div id="info" class="trinfo"></div>
-
-            <iframe id="iframe" class="framed" name="iframe"
-width="470px" height="90%"
-allowtransparency="true"
-style="z-index: 10;"
-style="background: #FFFFFF;"
-frameborder="1"
-                allowfullscreen="true"
-                webkitallowfullscreen="true"
-                msallowfullscreen="true"
-                mozallowfullscreen="true"
-                sandbox="allow-same-origin allow-top-navigation allow-scripts allow-pointer-lock"
-                allow="autoplay; fullscreen *; geolocation; microphone; camera; midi; monetization; xr-spatial-tracking; gamepad; gyroscope; accelerometer; xr; cross-origin-isolated"
-                src="{{cookiecutter.cdn}}empty.html"
-                scrolling="yes">
-            </iframe>
         </div>
 
     </div>
@@ -482,6 +670,7 @@ frameborder="1"
     function frame_online(url) {
         window.frames["iframe"].location = url;
     }
+
 
     </script>
 
